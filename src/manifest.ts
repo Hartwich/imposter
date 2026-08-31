@@ -17,7 +17,11 @@ export const imposterManifest = {
     countdownMs: 2_200,
     resultMs: 6_000,
     scoreboardMs: 5_000
-  }
+  },
+
+  ownsScreens: ["round_intro", "result"],
+  visual: { accent: "#8a7aa8", eyebrow: "Bluff" },
+  audio: { track: { profile: "mystery", bpm: 98, rootMidi: 46, masterGain: 0.11 } },
 } as const satisfies GameManifest;
 
 export const manifest = imposterManifest;

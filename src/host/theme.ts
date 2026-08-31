@@ -1,5 +1,8 @@
+import { tokens } from "./platformTheme.js";
 export const hostTheme = {
   titleFont: '"Space Grotesk", sans-serif',
-  text: "#f8fafc"
+  get text() {
+    return tokens().color.text;
+  }
 };
 

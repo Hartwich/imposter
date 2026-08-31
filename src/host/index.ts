@@ -1,6 +1,8 @@
 import Phaser from "phaser";
 import { imposterManifest } from "../manifest.js";
 import { renderImposterState } from "./ImposterRenderer.js";
+import { renderRoundScreens } from "./roundScreens.js";
+import { bindPlatformTheme, tokens } from "./platformTheme.js";
 
 interface HostClientLike {
   subscribe(callback: (state: HostAppStateLike) => void): () => void;
@@ -24,9 +26,15 @@ export class ImposterHostScene extends Phaser.Scene {
   }
 
   create(): void {
+    bindPlatformTheme(this.registry);
     const client = this.registry.get("hostClient") as HostClientLike;
 
     this.unsubscribe = client.subscribe((state) => {
+      // Intro and result screens belong to this game, not the platform.
+      if (renderRoundScreens(this, state)) {
+        return;
+      }
+
       const gameState = (state.game?.state ?? {}) as {
         stage?: string;
         category?: string;
@@ -45,7 +53,7 @@ export class ImposterHostScene extends Phaser.Scene {
       const playerNames = Object.fromEntries((state.room?.players ?? []).map((player) => [player.id, player.name]));
 
       this.children.removeAll(true);
-      this.cameras.main.setBackgroundColor("#111827");
+      this.cameras.main.setBackgroundColor(tokens().color.surface);
       renderImposterState(this, gameState, playerNames, state.room?.language);
     });
 
