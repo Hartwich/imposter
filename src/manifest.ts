@@ -20,7 +20,7 @@ export const imposterManifest = {
   },
 
   ownsScreens: ["round_intro", "result"],
-  visual: { accent: "#8a7aa8", eyebrow: "Bluff" },
+  visual: { accent: "#8a7aa8", icon: "mask", eyebrow: "Bluff" },
   audio: { track: { profile: "mystery", bpm: 98, rootMidi: 46, masterGain: 0.11 } },
 } as const satisfies GameManifest;
 
