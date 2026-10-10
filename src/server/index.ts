@@ -1,3 +1,4 @@
+import { Buffer } from "node:buffer";
 import { createBaseRoundState, type ServerGame, type ServerGameContext, type ScoreEntry } from "@open-party-lab/game-core";
 import { pickOne, shuffle } from "@open-party-lab/utils";
 import { imposterManifest } from "../manifest.js";

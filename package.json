@@ -60,6 +60,7 @@
     }
   },
   "devDependencies": {
+    "@types/node": "^20.19.43",
     "phaser": "^3.90.0",
     "typescript": "^5.7.3"
   }
