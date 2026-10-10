@@ -1,240 +1,85 @@
 import type { ControllerLayoutKey } from "@open-party-lab/game-core";
 import { imposterManifest } from "../manifest.js";
-import {
-  createImposterGuessInput,
-  createImposterVoteInput
-} from "./imposterBindings.js";
-
-interface ReadyLayoutModel {
-  currentPlayerReady: boolean;
-  readyCount: number;
-  playerCount: number;
-  label: string;
-  description?: string;
-  language?: "de" | "en";
-  onToggleReady: () => void;
-}
-
-interface ChoiceLayoutModel {
-  kind: "choice";
-  title: string;
-  subtitle?: string;
-  helperText?: string;
-  disabled: boolean;
-  ready?: ReadyLayoutModel;
-  choices: Array<{
-    id: string;
-    label: string;
-    description?: string;
-    disabled?: boolean;
-    onSelect: () => void;
-  }>;
-  stats?: Array<{ label: string; value: string; highlighted?: boolean }>;
-  feed?: string[];
-}
-
-interface ControllerGameRenderContext {
+import type { ImposterControllerState } from "../protocol.js";
+interface ControllerContext {
   state: {
     preferredLanguage?: "de" | "en";
-    room?: {
-      language?: "de" | "en";
-      selectedGameId?: string;
-      availableGames?: Array<{ id: string; displayName?: string; roundCompletionMode?: string }>;
-      players?: Array<{ id: string; name: string; isReady?: boolean }>;
-    } | null;
-    player?: {
-      id: string;
-      isReady?: boolean;
-    } | null;
-    game?: {
-      phase?: string;
-      message?: string;
-      state?: unknown;
-    } | null;
+    room?: { language?: "de" | "en"; players?: Array<{ id: string; name: string; isReady?: boolean; connected?: boolean }> } | null;
+    player?: { id: string; isReady?: boolean } | null;
+    game?: { phase?: string; roundNumber?: number; state?: unknown } | null;
   };
   onInput(input: unknown): void;
-  onSetReady?: (isReady: boolean) => void;
+  onSetReady?: (ready: boolean) => void;
 }
-
-interface ImposterControllerState {
-  stage?: "clues" | "voting" | "imposter_guess" | "resolved";
-  role?: "imposter" | "crew";
-  roleLabel?: string;
-  category?: string;
-  secretWord?: string;
-  clueOrder?: string[];
-  currentTurnPlayerId?: string;
-  clueTurnsCompleted?: number;
-  clueTurnsTotal?: number;
-  votesByPlayer?: Record<string, string>;
-  hasVoted?: boolean;
-  voteOptions?: Array<{ id: string; disabled: boolean }>;
-  imposterGuessOptions?: string[];
-  resolvedReason?: string;
-  imposterWon?: boolean;
-}
-
-function buildReadyModel(context: ControllerGameRenderContext): ReadyLayoutModel | undefined {
-  const { state, onSetReady } = context;
-  const gameId = state.room?.selectedGameId;
-  const selectedGame = gameId ? state.room?.availableGames?.find((entry) => entry.id === gameId) : undefined;
-
-  if (
-    selectedGame?.roundCompletionMode !== "wait_for_ready" ||
-    state.game?.phase !== "finished" ||
-    !state.room ||
-    !state.player ||
-    !onSetReady
-  ) {
-    return undefined;
-  }
-
-  const players = state.room.players ?? [];
-  const playerId = state.player.id;
-  const currentPlayerReady = Boolean(
-    players.find((player) => player.id === playerId)?.isReady ?? state.player.isReady
-  );
-  const readyCount = players.filter((player) => player.isReady).length;
-  const playerCount = players.length;
-  const en = state.room.language === "en";
-
-  return {
-    currentPlayerReady,
-    readyCount,
-    playerCount,
-    label: en ? "Next Round" : "Naechste Runde",
-    description: en
-      ? `${readyCount}/${playerCount} players are ready.`
-      : `${readyCount}/${playerCount} Spieler sind bereit.`,
-    language: state.room.language,
-    onToggleReady: () => onSetReady(!currentPlayerReady)
-  };
-}
-
-function getCurrentTurnLabel(imposterState: ImposterControllerState, playerNames: Record<string, string>): string | undefined {
-  const currentPlayerId = imposterState.currentTurnPlayerId;
-  if (!currentPlayerId) {
-    return undefined;
-  }
-
-  return playerNames[currentPlayerId] ?? currentPlayerId;
-}
-
-function formatStageLabel(stage: NonNullable<ImposterControllerState["stage"]>, en: boolean): string {
-  switch (stage) {
-    case "clues":
-      return en ? "Clues" : "Hinweise";
-    case "voting":
-      return en ? "Voting" : "Abstimmung";
-    case "imposter_guess":
-      return en ? "Imposter guess" : "Imposter-Tipp";
-    case "resolved":
-      return en ? "Resolved" : "Aufgeloest";
-    default:
-      return stage;
-  }
-}
-
-export function buildImposterControllerModel(context: ControllerGameRenderContext): ChoiceLayoutModel {
-  const { state, onInput } = context;
-  const imposterState = (state.game?.state ?? {}) as ImposterControllerState;
-  const en = state.room?.language === "en";
+export function buildImposterControllerModel({ state, onInput, onSetReady }: ControllerContext) {
+  const game = state.game?.state as ImposterControllerState | undefined;
+  const language = state.room?.language ?? state.preferredLanguage ?? "de";
+  const en = language === "en";
   const playerId = state.player?.id ?? "";
-  const phase = state.game?.phase;
-  const players = state.room?.players ?? [];
-  const playerNames = Object.fromEntries(players.map((player) => [player.id, player.name]));
-  const stage = imposterState.stage ?? "clues";
-  const title = state.room?.availableGames?.find((game) => game.id === "imposter")?.displayName ?? "Imposter";
-  const isImposter = imposterState.role === "imposter";
-  const isCurrentTurn = stage === "clues" && imposterState.currentTurnPlayerId === playerId;
-  const clueTurnsCompleted = imposterState.clueTurnsCompleted ?? 0;
-  const clueTurnsTotal = imposterState.clueTurnsTotal ?? 0;
-  const currentTurnLabel = getCurrentTurnLabel(imposterState, playerNames);
-
-  const choices: ChoiceLayoutModel["choices"] = [];
-
-  if (stage === "clues") {
-    if (isCurrentTurn) {
-      choices.push({
-        id: "clue:done",
-        label: en ? "Clue given" : "Hinweis abgegeben",
-        description: en ? "Once you are done speaking, tap here to continue." : "Wenn du fertig gesprochen hast, tippe hier weiter.",
-        disabled: phase !== "playing",
-        onSelect: () => onInput({ type: "submit_clue", playerId, clue: "", sentAt: Date.now() })
-      });
-    }
-  }
-
-  if (stage === "voting") {
-    for (const voteOption of imposterState.voteOptions ?? []) {
-      choices.push({
-        id: `vote:${voteOption.id}`,
-        label: playerNames[voteOption.id] ?? voteOption.id,
-        description: en ? "Suspect as the Imposter" : "Als Imposter verdaechtigen",
-        disabled: phase !== "playing" || voteOption.disabled,
-        onSelect: () => onInput(createImposterVoteInput(playerId, voteOption.id))
-      });
-    }
-  }
-
-  if (stage === "imposter_guess") {
-    for (const guessOption of imposterState.imposterGuessOptions ?? []) {
-      choices.push({
-        id: `guess:${guessOption}`,
-        label: guessOption,
-        description: en ? "Guess the word as Imposter" : "Wort als Imposter erraten",
-        disabled: phase !== "playing",
-        onSelect: () => onInput(createImposterGuessInput(playerId, guessOption))
-      });
-    }
-  }
-
-  const feed = (imposterState.clueOrder ?? []).map((turnPlayerId, index) => {
-    const prefix = `${index + 1}. ${playerNames[turnPlayerId] ?? turnPlayerId}`;
-    return en ? `${prefix} is up` : `${prefix} ist in der Reihe`;
-  });
-
+  const inPlay = state.game?.phase === "playing";
+  const isImposter = game?.role === "imposter";
+  const spectator = game?.role === "spectator";
+  const turn = game?.currentTurnPlayerId === playerId;
+  const players = game?.players ?? [];
+  const stage = inPlay && !spectator
+    ? game?.stage === "avatar" ? "avatar"
+      : game?.stage === "voting" ? "vote"
+      : game?.stage === "imposter_guess" && isImposter ? "submit" : "waiting"
+    : "waiting";
+  const send = (input: Record<string, unknown>) => {
+    if (!playerId || !game?.roundId || spectator) return;
+    onInput({ ...input, playerId, roundId: game.roundId, sentAt: Date.now() });
+  };
+  const labels = {
+    avatar: en ? "Your player photo" : "Dein Spielerfoto",
+    clues: isImposter ? (en ? "You are the Imposter" : "Du bist der Imposter") : (en ? "You are crew" : "Du gehörst zur Crew"),
+    voting: en ? "Who is bluffing?" : "Wer blufft?",
+    vote_reveal: en ? "The votes are in" : "Die Stimmen sind da",
+    imposter_guess: isImposter ? (en ? "Your last chance" : "Deine letzte Chance") : (en ? "One last guess" : "Ein letzter Worttipp"),
+    resolved: en ? "Round resolved" : "Runde aufgelöst"
+  };
+  const currentName = players.find(({ id }) => id === game?.currentTurnPlayerId)?.name ?? "…";
+  const helperText = spectator ? (en ? "You can join in with the next word." : "Du spielst beim nächsten Begriff mit.")
+    : game?.stage === "avatar" ? (en ? "Take a selfie or continue without a photo. Your picture appears on the shared screen." : "Mach ein Selfie oder spiele ohne Foto. Dein Bild erscheint auf dem Hauptbildschirm.")
+    : game?.stage === "clues" ? turn
+      ? (en ? "Say one related word out loud. Do not say the secret word. Then confirm below." : "Nenne laut ein passendes Wort. Verrate den Begriff nicht. Bestätige danach unten.")
+      : (en ? `${currentName} is speaking. Listen closely.` : `${currentName} ist dran. Hör gut zu.`)
+    : game?.stage === "voting" ? game.hasVoted
+      ? (en ? "Vote locked. Results appear when everyone has voted." : "Stimme abgegeben. Das Ergebnis erscheint, wenn alle abgestimmt haben.")
+      : (en ? "Share clues and discuss. Then tap the player you suspect. One secret vote; no self-votes." : "Nennt eure Hinweise und diskutiert. Tippe dann auf deinen Verdacht. Eine geheime Stimme; keine Selbstwahl.")
+    : game?.stage === "imposter_guess" ? isImposter
+      ? (en ? "Type the secret word. You have one guess and 30 seconds." : "Gib den geheimen Begriff ein. Du hast einen Versuch und 30 Sekunden.")
+      : (en ? "The Imposter has one chance to guess. Keep the word to yourself." : "Der Imposter darf einmal raten. Verrate den Begriff noch nicht.")
+    : game?.resolvedReason ?? (en ? "Watch the shared screen." : "Schaut auf den Hauptbildschirm.");
+  const connected = (state.room?.players ?? []).filter((player) => player.connected !== false);
+  const ready = state.game?.phase === "finished" && onSetReady ? {
+    currentPlayerReady: Boolean(connected.find(({ id }) => id === playerId)?.isReady ?? state.player?.isReady),
+    readyCount: connected.filter(({ isReady }) => isReady).length, playerCount: connected.length,
+    label: en ? "Ready for the next word" : "Bereit für den nächsten Begriff", language,
+    onToggleReady: () => onSetReady(!Boolean(connected.find(({ id }) => id === playerId)?.isReady))
+  } : undefined;
   return {
-    kind: "choice",
-    title,
-    subtitle: imposterState.roleLabel ?? (en ? "Assigning roles ..." : "Rolle wird verteilt ..."),
-    helperText:
-      imposterState.resolvedReason ??
-      state.game?.message ??
-      (stage === "clues"
-        ? isCurrentTurn
-          ? en
-            ? "Say your clue out loud, then tap Clue given."
-            : "Sprich deinen Hinweis muendlich und tippe danach auf Hinweis abgegeben."
-          : currentTurnLabel
-            ? `${en ? "Waiting for" : "Warte auf"} ${currentTurnLabel}.`
-            : en ? "Waiting for the next turn." : "Warte auf den naechsten Zug."
-        : undefined) ??
-      (en ? "Give a clue or find the Imposter." : "Gib einen Hinweis oder finde den Imposter."),
-    disabled: phase !== "playing",
-    choices:
-      choices.length > 0 ? choices : [],
-    ready: buildReadyModel(context),
-    stats: [
-      { label: en ? "Category" : "Kategorie", value: imposterState.category ?? "-" },
-      {
-        label: en ? "Secret Word" : "Geheimes Wort",
-        value: isImposter ? imposterState.secretWord ?? "???" : en ? "hidden" : "verborgen"
-      },
-      {
-        label: en ? "Clue Round" : "Hinweisrunde",
-        value: clueTurnsTotal > 0 ? `${clueTurnsCompleted}/${clueTurnsTotal}` : "-"
-      },
-      { label: "Phase", value: formatStageLabel(stage, en) }
-    ],
-    feed
+    kind: "social_party" as const, title: "Imposter", language, stage: stage as "avatar" | "vote" | "submit" | "waiting",
+    statusLabel: spectator ? (en ? "Next round" : "Nächste Runde") : labels[game?.stage ?? "avatar"], helperText,
+    secret: game?.secretWord ? { label: en ? "Secret word" : "Geheimer Begriff", term: game.secretWord }
+      : game?.hint ? { label: en ? "Your hint" : "Dein Hinweis", term: game.hint } : undefined,
+    score: players.find(({ id }) => id === playerId)?.points ?? 0,
+    taskKind: "text" as const, maxTextLength: 100, resetKey: `${game?.roundId ?? ""}:${stage}`,
+    hasSubmitted: stage === "avatar" ? Boolean(game?.avatarSubmitted) : stage === "vote" ? Boolean(game?.hasVoted) : false,
+    disabled: !inPlay || spectator, selectedId: game?.ownVote,
+    choices: (game?.voteOptions ?? []).map((id) => ({ id, label: players.find((player) => player.id === id)?.name ?? id, avatar: players.find((player) => player.id === id)?.avatar })),
+    actions: inPlay && game?.stage === "avatar" && !game.avatarSubmitted && !spectator
+      ? [{ id: "skip", label: en ? "Continue without photo" : "Ohne Foto weiterspielen", onPress: () => send({ type: "imposter:skip_avatar" }) }]
+      : inPlay && game?.stage === "clues" && turn
+        ? [{ id: "clue", label: en ? "Clue given →" : "Hinweis gegeben →", onPress: () => send({ type: "submit_clue", turnIndex: game.currentTurnIndex }) }] : [],
+    autoReady: !spectator && game ? { enabled: game.autoContinue, onChange: (enabled: boolean) => send({ type: "set_auto_continue", enabled }), onReady: () => onSetReady?.(true) } : undefined,
+    ready,
+    onSubmitAvatar: (media: string) => send({ type: "imposter:avatar", media }),
+    onVote: (suspectPlayerId: string) => send({ type: "vote_player", suspectPlayerId }),
+    onSubmitText: (guessWord: string) => send({ type: "guess_word", guessWord }),
+    onSubmitPick: () => {}, onSubmitMedia: () => {}
   };
 }
-
 export const controllerGame = {
-  id: imposterManifest.id,
-  layoutKey: "choice" as ControllerLayoutKey,
-  buildLayout(context: ControllerGameRenderContext) {
-    return buildImposterControllerModel(context);
-  }
+  id: imposterManifest.id, layoutKey: "social_party" as ControllerLayoutKey, buildLayout: buildImposterControllerModel
 } as const;

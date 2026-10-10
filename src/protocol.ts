@@ -1,71 +1,69 @@
 import type { BaseRoundState, PlayerInput } from "@open-party-lab/game-core";
-
-export type ImposterStage = "clues" | "voting" | "imposter_guess" | "resolved";
-
-export interface SubmitClueInput extends PlayerInput {
-  type: "submit_clue";
-  clue: string;
-}
-
-export interface VotePlayerInput extends PlayerInput {
-  type: "vote_player";
-  suspectPlayerId: string;
-}
-
-export interface GuessWordInput extends PlayerInput {
-  type: "guess_word";
-  guessWord: string;
-}
-
-export type ImposterInput = SubmitClueInput | VotePlayerInput | GuessWordInput;
-
+export type ImposterStage = "avatar" | "clues" | "voting" | "vote_reveal" | "imposter_guess" | "resolved";
+export type ImposterInput = PlayerInput & { roundId: string } & (
+  | { type: "submit_clue"; turnIndex: number }
+  | { type: "vote_player"; suspectPlayerId: string }
+  | { type: "guess_word"; guessWord: string }
+  | { type: "imposter:avatar"; media: string }
+  | { type: "imposter:skip_avatar" }
+  | { type: "set_auto_continue"; enabled: boolean }
+);
+export interface ImposterPlayer { id: string; name: string; avatar?: string; points: number; delta: number }
 export interface ImposterState extends BaseRoundState {
+  roundId: string;
   stage: ImposterStage;
   secretWord: string;
+  wordId: string;
+  usedWordIds: string[];
+  confirmClues: boolean;
   category: string;
+  hint?: string;
   imposterPlayerId: string;
   clueOrder: string[];
+  players: ImposterPlayer[];
+  avatars: Record<string, string>;
+  avatarDone: Record<string, boolean>;
+  autoContinueByPlayer: Record<string, boolean>;
+  gameScores: Record<string, number>;
   currentTurnIndex: number;
   votesByPlayer: Record<string, string>;
   voteResultPlayerId?: string;
-  imposterGuessOptions: string[];
+  voteTied: boolean;
   imposterGuess?: string;
   imposterWon: boolean;
   resolvedReason?: string;
+  finishAt: number | null;
+  disconnectedAt: Record<string, number>;
 }
-
 export interface ImposterPublicState {
-  stage: string;
-  category: string;
+  confirmClues: boolean;
+  roundId: string;
+  stage: ImposterStage;
+  players: ImposterPlayer[];
+  category?: string;
   clueOrder: string[];
   currentTurnIndex: number;
   currentTurnPlayerId?: string;
   clueTurnsTotal: number;
-  voteCounts: Array<{ playerId: string; playerName: string; votes: number }>;
+  submittedCount: number;
+  playerCount: number;
+  finishAt: number | null;
+  remainingMs: number | null;
+  voteCounts: Array<{ playerId: string; votes: number }>;
   voteResultPlayerId?: string;
-  imposterRevealName?: string;
+  voteTied: boolean;
+  imposterRevealId?: string;
   secretWord?: string;
   imposterGuess?: string;
   imposterWon: boolean;
   resolvedReason?: string;
-  message?: string;
 }
-
-export interface ImposterControllerState {
-  stage: string;
-  role: "imposter" | "crew";
-  roleLabel: string;
-  category: string;
-  secretWord?: string;
-  currentTurnPlayerId?: string;
-  clueTurnsCompleted: number;
-  clueTurnsTotal: number;
-  votesByPlayer: Record<string, string>;
+export interface ImposterControllerState extends ImposterPublicState {
+  role: "imposter" | "crew" | "spectator";
+  hint?: string;
   hasVoted: boolean;
-  voteOptions: Array<{ id: string; disabled: boolean }>;
-  imposterGuessOptions: string[];
-  voteResultPlayerId?: string;
-  imposterGuess?: string;
-  imposterWon: boolean;
-  resolvedReason?: string;
+  ownVote?: string;
+  avatarSubmitted: boolean;
+  autoContinue: boolean;
+  voteOptions: string[];
 }

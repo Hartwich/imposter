@@ -1,660 +1,213 @@
-import {
-  createBaseRoundState,
-  roundPhaseDurations,
-  type ScoreEntry,
-  type SupportedLanguage,
-  type ServerGame
-} from "@open-party-lab/game-core";
+import { createBaseRoundState, type ServerGame, type ServerGameContext, type ScoreEntry } from "@open-party-lab/game-core";
 import { pickOne, shuffle } from "@open-party-lab/utils";
 import { imposterManifest } from "../manifest.js";
 import type { ImposterControllerState, ImposterInput, ImposterPublicState, ImposterState } from "../protocol.js";
+import { getWords } from "./words.js";
 
-interface SecretWordPack {
-  category: string;
-  word: string;
-  clueSuggestions: string[];
-}
-
-const imposterText = {
+const clueRounds = 2;
+const voteRevealMs = 5_000;
+const guessMs = 30_000;
+const resultMs = 8_000;
+const disconnectGraceMs = 30_000;
+const text = {
   de: {
-    rolesPreparing: "Rollen werden verteilt ...",
-    cluesRunning: "Hinweisphase laeuft.",
-    cluesDone: "Hinweise abgeschlossen. Jetzt wird abgestimmt.",
-    nextFallback: "Naechster",
-    nextTurn: "Naechster Zug.",
-    nextPlayer: (name: string) => `${name} ist dran.`,
-    votingProgress: (voted: number, total: number) => `Abstimmung laeuft (${voted}/${total}).`,
-    noVotesMessage: "Keine Stimmen abgegeben.",
-    noVotesReason: "Niemand hat abgestimmt. Der Imposter entkommt.",
-    wrongSuspectMessage: "Falscher Verdacht - Imposter gewinnt.",
-    wrongSuspectReason: "Die Gruppe hat die falsche Person verdaechtigt.",
-    imposterFound: "Imposter entdeckt! Letzte Chance: Wort erraten.",
-    imposterGuessWinReason: "Imposter wurde entdeckt, hat aber das geheime Wort korrekt erraten.",
-    imposterGuessLoseReason: "Imposter wurde entdeckt und lag beim Wort falsch.",
-    imposterGuessWinMessage: "Imposter erratet das Wort und stiehlt den Sieg.",
-    imposterGuessLoseMessage: "Crew entlarvt den Imposter erfolgreich.",
-    roleImposter: "Du bist der Imposter",
-    roleCrew: "Du bist Crew",
-    unknown: "Unbekannt"
+    tied: "Gleichstand: Niemand wird entlarvt. Der Imposter entkommt.",
+    escaped: "Die Gruppe hat die falsche Person verdächtigt. Der Imposter entkommt.",
+    guessed: "Der Imposter hat den Begriff erraten und stiehlt den Sieg.",
+    caught: "Die Crew hat den Imposter entlarvt. Sein Worttipp war falsch.",
+    timeout: "Der Imposter hat keinen Worttipp abgegeben. Die Crew gewinnt.",
+    left: "Der Imposter hat die Runde verlassen. Die Crew gewinnt.",
+    noVotes: "Keine gültige Stimme. Der Imposter entkommt."
   },
   en: {
-    rolesPreparing: "Roles are being assigned ...",
-    cluesRunning: "Clue phase is running.",
-    cluesDone: "Clues are complete. Vote now.",
-    nextFallback: "Next player",
-    nextTurn: "Next turn.",
-    nextPlayer: (name: string) => `${name} is up.`,
-    votingProgress: (voted: number, total: number) => `Voting in progress (${voted}/${total}).`,
-    noVotesMessage: "No votes were cast.",
-    noVotesReason: "Nobody voted. The Imposter escapes.",
-    wrongSuspectMessage: "Wrong suspect - Imposter wins.",
-    wrongSuspectReason: "The group suspected the wrong person.",
-    imposterFound: "Imposter found! Last chance: guess the word.",
-    imposterGuessWinReason: "The Imposter was found, but guessed the secret word correctly.",
-    imposterGuessLoseReason: "The Imposter was found and guessed the word wrong.",
-    imposterGuessWinMessage: "The Imposter guesses the word and steals the win.",
-    imposterGuessLoseMessage: "The crew exposes the Imposter successfully.",
-    roleImposter: "You are the Imposter",
-    roleCrew: "You are Crew",
-    unknown: "Unknown"
-  }
-} satisfies Record<SupportedLanguage, {
-  rolesPreparing: string;
-  cluesRunning: string;
-  cluesDone: string;
-  nextFallback: string;
-  nextTurn: string;
-  nextPlayer: (name: string) => string;
-  votingProgress: (voted: number, total: number) => string;
-  noVotesMessage: string;
-  noVotesReason: string;
-  wrongSuspectMessage: string;
-  wrongSuspectReason: string;
-  imposterFound: string;
-  imposterGuessWinReason: string;
-  imposterGuessLoseReason: string;
-  imposterGuessWinMessage: string;
-  imposterGuessLoseMessage: string;
-  roleImposter: string;
-  roleCrew: string;
-  unknown: string;
-}>;
-
-const imposterCategoryLabels: Record<SupportedLanguage, Record<string, string>> = {
-  de: {
-    Essen: "Essen",
-    Objekt: "Objekt",
-    Ort: "Ort",
-    Tier: "Tier",
-    Alltag: "Alltag",
-    Sport: "Sport",
-    Beruf: "Beruf",
-    Technik: "Technik",
-    Natur: "Natur",
-    Kultur: "Kultur"
-  },
-  en: {
-    Essen: "Food",
-    Objekt: "Object",
-    Ort: "Place",
-    Tier: "Animal",
-    Alltag: "Everyday life",
-    Sport: "Sports",
-    Beruf: "Job",
-    Technik: "Technology",
-    Natur: "Nature",
-    Kultur: "Culture"
+    tied: "A tie: nobody is exposed. The Imposter escapes.",
+    escaped: "The group accused the wrong person. The Imposter escapes.",
+    guessed: "The Imposter guessed the word and steals the win.",
+    caught: "The crew exposed the Imposter. Their word guess was wrong.",
+    timeout: "The Imposter did not guess the word. The crew wins.",
+    left: "The Imposter left the round. The crew wins.",
+    noVotes: "No valid votes. The Imposter escapes."
   }
 };
-
-function localizeImposterCategory(category: string, language: SupportedLanguage): string {
-  return imposterCategoryLabels[language][category] ?? category;
+export function normalizeGuess(value: string): string {
+  return value.trim().toLocaleLowerCase().replace(/ä/g, "ae").replace(/ö/g, "oe").replace(/ü/g, "ue")
+    .replace(/ß/g, "ss").normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]/g, "");
 }
-
-function buildCategoryClues(category: string): string[] {
-  switch (category) {
-    case "Essen":
-      return ["geschmack", "kueche", "zutat", "hunger", "gericht", "portion"];
-    case "Objekt":
-      return ["material", "nutzen", "haushalt", "alltag", "form", "gebrauch"];
-    case "Ort":
-      return ["reise", "menschen", "karte", "besuch", "weg", "umgebung"];
-    case "Tier":
-      return ["natur", "bewegung", "geraeusch", "lebewesen", "instinkt", "art"];
-    case "Alltag":
-      return ["taeglich", "routine", "praktisch", "haushalt", "zeit", "gewohnheit"];
-    case "Sport":
-      return ["team", "wettkampf", "training", "punkte", "bewegung", "regel"];
-    case "Beruf":
-      return ["arbeit", "aufgabe", "berufung", "tag", "kompetenz", "einsatz"];
-    case "Technik":
-      return ["digital", "geraet", "funktion", "innovation", "akku", "display"];
-    case "Natur":
-      return ["draussen", "klima", "landschaft", "jahreszeit", "element", "umwelt"];
-    case "Kultur":
-      return ["kunst", "geschichte", "tradition", "szene", "publikum", "werk"];
-    default:
-      return ["begriff", "naheliegend", "bekannt", "alltag", "typisch", "idee"];
-  }
+function validPhoto(media: unknown): media is string {
+  if (typeof media !== "string" || media.length > 35_000 || !/^data:image\/jpeg;base64,\/9j\/[A-Za-z0-9+/]*={0,2}$/.test(media)) return false;
+  const bytes = Buffer.from(media.slice("data:image/jpeg;base64,".length), "base64");
+  return bytes.length >= 200 && bytes[0] === 255 && bytes[1] === 216 && bytes.at(-2) === 255 && bytes.at(-1) === 217;
 }
-
-const EXTRA_SECRET_WORD_ENTRIES: Array<Pick<SecretWordPack, "category" | "word">> = [
-  { category: "Essen", word: "Burger" },
-  { category: "Essen", word: "Sushi" },
-  { category: "Essen", word: "Nudeln" },
-  { category: "Essen", word: "Salat" },
-  { category: "Essen", word: "Lasagne" },
-  { category: "Essen", word: "Taco" },
-  { category: "Essen", word: "Risotto" },
-  { category: "Essen", word: "Donut" },
-  { category: "Essen", word: "Pfannkuchen" },
-  { category: "Essen", word: "Croissant" },
-  { category: "Essen", word: "Bratwurst" },
-  { category: "Essen", word: "Kuerbissuppe" },
-  { category: "Essen", word: "Kartoffelgratin" },
-  { category: "Essen", word: "Muesli" },
-  { category: "Essen", word: "Kaesekuchen" },
-  { category: "Essen", word: "Brezel" },
-  { category: "Essen", word: "Sandwich" },
-  { category: "Essen", word: "Eiscreme" },
-  { category: "Essen", word: "Omelett" },
-  { category: "Essen", word: "Guacamole" },
-  { category: "Objekt", word: "Schluessel" },
-  { category: "Objekt", word: "Rucksack" },
-  { category: "Objekt", word: "Wasserflasche" },
-  { category: "Objekt", word: "Stuhl" },
-  { category: "Objekt", word: "Lampe" },
-  { category: "Objekt", word: "Kopfkissen" },
-  { category: "Objekt", word: "Fernbedienung" },
-  { category: "Objekt", word: "Rasierapparat" },
-  { category: "Objekt", word: "Koffer" },
-  { category: "Objekt", word: "Brille" },
-  { category: "Objekt", word: "Thermoskanne" },
-  { category: "Objekt", word: "Notizbuch" },
-  { category: "Objekt", word: "Hammer" },
-  { category: "Objekt", word: "Schraubenzieher" },
-  { category: "Objekt", word: "Teekanne" },
-  { category: "Objekt", word: "Besen" },
-  { category: "Objekt", word: "Mikrofon" },
-  { category: "Objekt", word: "Kamera" },
-  { category: "Objekt", word: "Schachbrett" },
-  { category: "Objekt", word: "Taschenrechner" },
-  { category: "Ort", word: "Bibliothek" },
-  { category: "Ort", word: "Krankenhaus" },
-  { category: "Ort", word: "Schule" },
-  { category: "Ort", word: "Universitaet" },
-  { category: "Ort", word: "Bahnhof" },
-  { category: "Ort", word: "Supermarkt" },
-  { category: "Ort", word: "Baeckerei" },
-  { category: "Ort", word: "Museum" },
-  { category: "Ort", word: "Stadion" },
-  { category: "Ort", word: "Campingplatz" },
-  { category: "Ort", word: "Leuchtturm" },
-  { category: "Ort", word: "Burg" },
-  { category: "Ort", word: "Zoo" },
-  { category: "Ort", word: "Aquarium" },
-  { category: "Ort", word: "Kino" },
-  { category: "Ort", word: "Theater" },
-  { category: "Ort", word: "Schwimmbad" },
-  { category: "Ort", word: "Rathaus" },
-  { category: "Ort", word: "Marktplatz" },
-  { category: "Ort", word: "Parkhaus" },
-  { category: "Tier", word: "Giraffe" },
-  { category: "Tier", word: "Krokodil" },
-  { category: "Tier", word: "Delfin" },
-  { category: "Tier", word: "Eule" },
-  { category: "Tier", word: "Fuchs" },
-  { category: "Tier", word: "Eichhoernchen" },
-  { category: "Tier", word: "Kaenguru" },
-  { category: "Tier", word: "Faultier" },
-  { category: "Tier", word: "Schmetterling" },
-  { category: "Tier", word: "Biber" },
-  { category: "Tier", word: "Marder" },
-  { category: "Tier", word: "Igel" },
-  { category: "Tier", word: "Seepferdchen" },
-  { category: "Tier", word: "Tintenfisch" },
-  { category: "Tier", word: "Walross" },
-  { category: "Tier", word: "Lama" },
-  { category: "Tier", word: "Pfau" },
-  { category: "Tier", word: "Otter" },
-  { category: "Tier", word: "Chamäleon" },
-  { category: "Tier", word: "Koala" },
-  { category: "Alltag", word: "Wecker" },
-  { category: "Alltag", word: "Dusche" },
-  { category: "Alltag", word: "Fruehstueck" },
-  { category: "Alltag", word: "Arbeitsweg" },
-  { category: "Alltag", word: "Wochenende" },
-  { category: "Alltag", word: "Einkaufsliste" },
-  { category: "Alltag", word: "Haushaltsplan" },
-  { category: "Alltag", word: "Kaffeepause" },
-  { category: "Alltag", word: "Wasserkocher" },
-  { category: "Alltag", word: "Abendessen" },
-  { category: "Alltag", word: "Waeschekorb" },
-  { category: "Alltag", word: "Spuelmaschine" },
-  { category: "Alltag", word: "Fensterputzen" },
-  { category: "Alltag", word: "Muellsortierung" },
-  { category: "Alltag", word: "ToDoListe" },
-  { category: "Alltag", word: "Terminkalender" },
-  { category: "Alltag", word: "Notizzettel" },
-  { category: "Alltag", word: "Mittagspause" },
-  { category: "Alltag", word: "Pendelzeit" },
-  { category: "Alltag", word: "Schlafroutine" },
-  { category: "Sport", word: "Basketball" },
-  { category: "Sport", word: "Tennis" },
-  { category: "Sport", word: "Volleyball" },
-  { category: "Sport", word: "Handball" },
-  { category: "Sport", word: "Radsport" },
-  { category: "Sport", word: "Schwimmen" },
-  { category: "Sport", word: "Klettern" },
-  { category: "Sport", word: "Skateboard" },
-  { category: "Sport", word: "Surfen" },
-  { category: "Sport", word: "Snowboard" },
-  { category: "Sport", word: "Golf" },
-  { category: "Sport", word: "Judo" },
-  { category: "Sport", word: "Boxen" },
-  { category: "Sport", word: "Eishockey" },
-  { category: "Sport", word: "Badminton" },
-  { category: "Sport", word: "Bogenschiessen" },
-  { category: "Sport", word: "Triathlon" },
-  { category: "Sport", word: "Sprint" },
-  { category: "Sport", word: "Yoga" },
-  { category: "Sport", word: "Pilates" },
-  { category: "Beruf", word: "Lehrkraft" },
-  { category: "Beruf", word: "Pilot" },
-  { category: "Beruf", word: "Arzt" },
-  { category: "Beruf", word: "Architekt" },
-  { category: "Beruf", word: "Anwaeltin" },
-  { category: "Beruf", word: "Journalist" },
-  { category: "Beruf", word: "Programmierer" },
-  { category: "Beruf", word: "Designer" },
-  { category: "Beruf", word: "Koch" },
-  { category: "Beruf", word: "Polizist" },
-  { category: "Beruf", word: "Sanitaeter" },
-  { category: "Beruf", word: "Mechaniker" },
-  { category: "Beruf", word: "Elektriker" },
-  { category: "Beruf", word: "Friseur" },
-  { category: "Beruf", word: "Fotograf" },
-  { category: "Beruf", word: "Landwirt" },
-  { category: "Beruf", word: "Psychologe" },
-  { category: "Beruf", word: "Apotheker" },
-  { category: "Beruf", word: "Buchhalter" },
-  { category: "Beruf", word: "Uebersetzer" },
-  { category: "Technik", word: "Laptop" },
-  { category: "Technik", word: "Tablet" },
-  { category: "Technik", word: "Router" },
-  { category: "Technik", word: "Drohne" },
-  { category: "Technik", word: "BluetoothBox" },
-  { category: "Technik", word: "Smartwatch" },
-  { category: "Technik", word: "3DDrucker" },
-  { category: "Technik", word: "Konsole" },
-  { category: "Technik", word: "Joystick" },
-  { category: "Technik", word: "Kopfhörer" },
-  { category: "Technik", word: "Projektor" },
-  { category: "Technik", word: "USBStick" },
-  { category: "Technik", word: "Powerbank" },
-  { category: "Technik", word: "EReader" },
-  { category: "Technik", word: "Scanner" },
-  { category: "Technik", word: "Maus" },
-  { category: "Technik", word: "Tastatur" },
-  { category: "Technik", word: "Mikrochips" },
-  { category: "Technik", word: "Solarpanel" },
-  { category: "Technik", word: "VRBrille" },
-  { category: "Natur", word: "Wasserfall" },
-  { category: "Natur", word: "Vulkan" },
-  { category: "Natur", word: "Gletscher" },
-  { category: "Natur", word: "Regenbogen" },
-  { category: "Natur", word: "Gewitter" },
-  { category: "Natur", word: "Wuestenduene" },
-  { category: "Natur", word: "Korallenriff" },
-  { category: "Natur", word: "Baumkrone" },
-  { category: "Natur", word: "Moos" },
-  { category: "Natur", word: "Lavendel" },
-  { category: "Natur", word: "Sonnenaufgang" },
-  { category: "Natur", word: "Nordlicht" },
-  { category: "Natur", word: "Tropfsteinhoehle" },
-  { category: "Natur", word: "Klippe" },
-  { category: "Natur", word: "Gezeiten" },
-  { category: "Natur", word: "Sandstrand" },
-  { category: "Natur", word: "Birkenwald" },
-  { category: "Natur", word: "Seegras" },
-  { category: "Natur", word: "Steinbock" },
-  { category: "Natur", word: "Ahornblatt" },
-  { category: "Kultur", word: "Oper" },
-  { category: "Kultur", word: "Ballett" },
-  { category: "Kultur", word: "Roman" },
-  { category: "Kultur", word: "Poesie" },
-  { category: "Kultur", word: "Graffiti" },
-  { category: "Kultur", word: "Skulptur" },
-  { category: "Kultur", word: "Jazz" },
-  { category: "Kultur", word: "HipHop" },
-  { category: "Kultur", word: "Folklore" },
-  { category: "Kultur", word: "Festival" },
-  { category: "Kultur", word: "Kostuem" },
-  { category: "Kultur", word: "Kulisse" },
-  { category: "Kultur", word: "Kinofilm" },
-  { category: "Kultur", word: "Fotografie" },
-  { category: "Kultur", word: "Keramik" },
-  { category: "Kultur", word: "Aquarell" },
-  { category: "Kultur", word: "Mosaik" },
-  { category: "Kultur", word: "Symphonie" },
-  { category: "Kultur", word: "Mythologie" },
-  { category: "Kultur", word: "Mittelaltermarkt" }
-];
-
-const HINT_ROUNDS = 2;
-
-const SECRET_WORD_PACKS: SecretWordPack[] = [
-  { category: "Essen", word: "Pizza", clueSuggestions: ["ofen", "kaese", "teig", "italien", "party", "stuecke"] },
-  { category: "Objekt", word: "Regenschirm", clueSuggestions: ["regen", "griff", "faltbar", "wetter", "schutz", "wind"] },
-  { category: "Ort", word: "Flughafen", clueSuggestions: ["terminal", "koffer", "sicherheitskontrolle", "startbahn", "reise", "gate"] },
-  { category: "Tier", word: "Pinguin", clueSuggestions: ["eis", "watscheln", "suedpol", "schwarzweiss", "kolonie", "fisch"] },
-  { category: "Alltag", word: "Toothbrush", clueSuggestions: ["morgen", "bad", "paste", "zaehne", "borsten", "hygiene"] },
-  { category: "Sport", word: "Fussball", clueSuggestions: ["tor", "rasen", "elfmeter", "pass", "liga", "fans"] },
-  { category: "Beruf", word: "Feuerwehr", clueSuggestions: ["einsatz", "sirene", "schlauch", "helm", "rettung", "leiter"] },
-  { category: "Technik", word: "Smartphone", clueSuggestions: ["app", "touch", "akku", "kamera", "chat", "mobil"] },
-  ...EXTRA_SECRET_WORD_ENTRIES.map((entry) => ({
-    category: entry.category,
-    word: entry.word,
-    clueSuggestions: buildCategoryClues(entry.category)
-  }))
-];
-
-function countVotes(votesByPlayer: Record<string, string>): Array<[string, number]> {
-  const tally = new Map<string, number>();
-
-  for (const votedPlayerId of Object.values(votesByPlayer)) {
-    tally.set(votedPlayerId, (tally.get(votedPlayerId) ?? 0) + 1);
-  }
-
-  return [...tally.entries()].sort((left, right) => right[1] - left[1]);
+function eligible(state: ImposterState, context: ServerGameContext): string[] {
+  return state.clueOrder.filter((id) => context.players.some((player) => player.id === id && player.connected));
 }
-
-function buildGuessOptions(secretWord: string): string[] {
-  const distractors = shuffle(
-    SECRET_WORD_PACKS.map((entry) => entry.word).filter((word) => word !== secretWord)
-  ).slice(0, 3);
-  return shuffle([secretWord, ...distractors]);
+function tally(state: ImposterState): Array<{ playerId: string; votes: number }> {
+  const counts = new Map<string, number>();
+  for (const id of Object.values(state.votesByPlayer)) counts.set(id, (counts.get(id) ?? 0) + 1);
+  return [...counts].map(([playerId, votes]) => ({ playerId, votes })).sort((a, b) => b.votes - a.votes);
 }
-
-function getCurrentTurnPlayerId(clueOrder: string[], currentTurnIndex: number): string | undefined {
-  if (clueOrder.length === 0) {
-    return undefined;
-  }
-
-  return clueOrder[currentTurnIndex % clueOrder.length];
+function currentTurn(state: ImposterState): string | undefined {
+  return state.stage === "clues" ? state.clueOrder[state.currentTurnIndex % state.clueOrder.length] : undefined;
 }
-
-function getClueTurnsTotal(clueOrder: string[]): number {
-  return clueOrder.length * HINT_ROUNDS;
+function settle(state: ImposterState, context: ServerGameContext, imposterWon: boolean, reason: string): ImposterState {
+  return { ...state, stage: "resolved", imposterWon, resolvedReason: reason,
+    finishAt: context.now + resultMs, updatedAt: context.now };
 }
-
-function resolveVoteResult(state: ImposterState, now: number, language: SupportedLanguage): ImposterState {
-  const voteCounts = countVotes(state.votesByPlayer);
-  const topSuspect = voteCounts[0]?.[0];
-  const text = imposterText[language];
-
-  if (!topSuspect) {
-    return {
-      ...state,
-      stage: "resolved",
-      imposterWon: true,
-      resolvedReason: text.noVotesReason,
-      updatedAt: now,
-      message: text.noVotesMessage
-    };
-  }
-
-  if (topSuspect !== state.imposterPlayerId) {
-    return {
-      ...state,
-      stage: "resolved",
-      voteResultPlayerId: topSuspect,
-      imposterWon: true,
-      resolvedReason: text.wrongSuspectReason,
-      updatedAt: now,
-      message: text.wrongSuspectMessage
-    };
-  }
-
+function score(state: ImposterState): ScoreEntry[] {
+  if (state.stage !== "resolved") return [];
+  return state.imposterWon ? [{ playerId: state.imposterPlayerId, delta: 2, reason: "Imposter" }]
+    : state.clueOrder.filter((id) => id !== state.imposterPlayerId).map((playerId) => ({ playerId, delta: 1, reason: "Crew" }));
+}
+function closeVote(state: ImposterState, context: ServerGameContext): ImposterState {
+  const counts = tally(state);
+  const tied = counts.length > 1 && counts[0].votes === counts[1].votes;
+  return { ...state, stage: "vote_reveal", voteTied: tied,
+    voteResultPlayerId: tied ? undefined : counts[0]?.playerId,
+    finishAt: context.now + voteRevealMs, updatedAt: context.now };
+}
+function afterPhotos(state: ImposterState): "clues" | "voting" {
+  return state.confirmClues === false ? "voting" : "clues";
+}
+function nextTurn(state: ImposterState, context: ServerGameContext): ImposterState {
+  const currentTurnIndex = state.currentTurnIndex + 1;
+  return { ...state, currentTurnIndex, stage: currentTurnIndex >= state.clueOrder.length * clueRounds ? "voting" : "clues", updatedAt: context.now };
+}
+function publicState(state: ImposterState, context: ServerGameContext): ImposterPublicState {
+  const revealed = ["vote_reveal", "imposter_guess", "resolved"].includes(state.stage);
+  // Project this round's points before the platform's one-time score commit.
+  const deltas = Object.fromEntries(score(state).map((entry) => [entry.playerId, entry.delta]));
+  const pending = state.phase === "playing";
+  const ids = eligible(state, context);
   return {
-    ...state,
-    stage: "imposter_guess",
-    voteResultPlayerId: topSuspect,
-    imposterGuessOptions: buildGuessOptions(state.secretWord),
-    updatedAt: now,
-    message: text.imposterFound
+    roundId: state.roundId, stage: state.stage, confirmClues: state.confirmClues !== false,
+    players: state.players.map((player) => ({ ...player,
+      name: context.players.find(({ id }) => id === player.id)?.name ?? player.name,
+      avatar: state.avatars[player.id], points: (state.gameScores[player.id] ?? 0) + (pending ? deltas[player.id] ?? 0 : 0), delta: deltas[player.id] ?? 0 })),
+    category: state.stage === "resolved" ? state.category : undefined,
+    clueOrder: state.clueOrder, currentTurnIndex: state.currentTurnIndex, currentTurnPlayerId: currentTurn(state),
+    clueTurnsTotal: state.clueOrder.length * clueRounds,
+    submittedCount: state.stage === "avatar" ? ids.filter((id) => state.avatarDone[id]).length : ids.filter((id) => state.votesByPlayer[id]).length,
+    playerCount: ids.length, finishAt: state.finishAt, remainingMs: state.finishAt === null ? null : Math.max(0, state.finishAt - context.now),
+    voteCounts: revealed ? tally(state) : [], voteResultPlayerId: revealed ? state.voteResultPlayerId : undefined,
+    voteTied: revealed && state.voteTied,
+    imposterRevealId: state.stage === "imposter_guess" || state.stage === "resolved" ? state.imposterPlayerId : undefined,
+    secretWord: state.stage === "resolved" ? state.secretWord : undefined,
+    imposterGuess: state.stage === "resolved" ? state.imposterGuess : undefined,
+    imposterWon: state.stage === "resolved" && state.imposterWon, resolvedReason: state.resolvedReason
   };
 }
-
-function resolveImposterGuess(
-  state: ImposterState,
-  guessWord: string,
-  now: number,
-  language: SupportedLanguage
-): ImposterState {
-  const imposterWon = guessWord === state.secretWord;
-  const text = imposterText[language];
-
-  return {
-    ...state,
-    stage: "resolved",
-    imposterGuess: guessWord,
-    imposterWon,
-    resolvedReason: imposterWon
-      ? text.imposterGuessWinReason
-      : text.imposterGuessLoseReason,
-    updatedAt: now,
-    message: imposterWon ? text.imposterGuessWinMessage : text.imposterGuessLoseMessage
-  };
-}
-
-function buildControllerStateForPlayer(
-  state: ImposterState,
-  language: SupportedLanguage,
-  playerId: string
-): ImposterControllerState {
-  const text = imposterText[language];
-  const hasVoted = state.votesByPlayer[playerId] !== undefined;
-  const role: ImposterControllerState["role"] =
-    playerId === state.imposterPlayerId ? "imposter" : "crew";
-  const currentTurnPlayerId =
-    state.stage === "clues" ? getCurrentTurnPlayerId(state.clueOrder, state.currentTurnIndex) : undefined;
-  const clueTurnsTotal = getClueTurnsTotal(state.clueOrder);
-  const clueTurnsCompleted = Math.min(state.currentTurnIndex, clueTurnsTotal);
-
-  return {
-    stage: state.stage,
-    role,
-    roleLabel: playerId === state.imposterPlayerId ? text.roleImposter : text.roleCrew,
-    category: localizeImposterCategory(state.category, language),
-    secretWord: playerId === state.imposterPlayerId && state.stage !== "resolved" ? state.secretWord : undefined,
-    currentTurnPlayerId,
-    clueTurnsCompleted,
-    clueTurnsTotal,
-    votesByPlayer: state.votesByPlayer,
-    hasVoted,
-    voteOptions: state.stage === "voting"
-      ? state.clueOrder
-          .filter((id) => id !== playerId)
-          .map((id) => ({ id, disabled: hasVoted }))
-      : [],
-    imposterGuessOptions: state.stage === "imposter_guess" && playerId === state.imposterPlayerId
-      ? state.imposterGuessOptions
-      : [],
-    voteResultPlayerId: state.voteResultPlayerId,
-    imposterGuess: state.imposterGuess,
-    imposterWon: state.imposterWon,
-    resolvedReason: state.resolvedReason
-  };
-}
-
-function buildScore(state: ImposterState): ScoreEntry[] {
-  if (state.imposterWon) {
-    return [{ playerId: state.imposterPlayerId, delta: 2, reason: "Imposter victory" }];
-  }
-
-  return state.clueOrder
-    .filter((playerId) => playerId !== state.imposterPlayerId)
-    .map((playerId) => ({ playerId, delta: 1, reason: "Imposter entlarvt" }));
-}
-
-export const serverGame: ServerGame<
-  ImposterState,
-  ImposterInput,
-  ImposterPublicState | ImposterControllerState
-> = {
+export const serverGame: ServerGame<ImposterState, ImposterInput, ImposterPublicState | ImposterControllerState> = {
   manifest: imposterManifest,
   createInitialState(context) {
-    const selectedPack = pickOne(SECRET_WORD_PACKS);
-    const imposterPlayerId = pickOne(context.players).id;
-    const clueOrder = shuffle(context.players.map((player) => player.id));
-    const text = imposterText[context.language];
-
+    const previous = context.previousRound?.gameId === "imposter" && context.previousRound.phase === "finished"
+      ? context.previousRound.state as ImposterState : undefined;
+    const players = context.players.filter((player) => player.connected);
+    const words = getWords(context.language, context.roomSettings.imposterWordCategory);
+    const unused = words.filter((word) => !(previous?.usedWordIds ?? []).includes(word.id));
+    const candidates = unused.length ? unused : words.filter((word) => word.id !== previous?.wordId);
+    const word = pickOne(candidates.length ? candidates : words);
+    const confirmClues = context.roomSettings.imposterConfirmClues !== "off";
+    const hint = context.roomSettings.imposterGiveHint === "on" ? word.hints[0] : undefined;
+    const avatars = previous?.avatars ?? {};
+    const avatarDone = Object.fromEntries(players.filter(({ id }) => previous?.avatarDone[id]).map(({ id }) => [id, true]));
     return {
-      ...createBaseRoundState("round_intro", context.now, {
-        durationMs: roundPhaseDurations.roundIntroMs,
-        message: text.rolesPreparing
-      }),
-      stage: "clues",
-      secretWord: selectedPack.word,
-      category: selectedPack.category,
-      imposterPlayerId,
-      clueOrder,
-      currentTurnIndex: 0,
-      votesByPlayer: {},
-      imposterGuessOptions: [],
-      imposterWon: false
+      ...createBaseRoundState("round_intro", context.now, { durationMs: 1_600 }),
+      roundId: `${context.roundNumber}:${context.now}`, stage: players.every(({ id }) => avatarDone[id]) ? (confirmClues ? "clues" : "voting") : "avatar",
+      players: players.map(({ id, name }) => ({ id, name, points: 0, delta: 0 })),
+      secretWord: word.word, wordId: word.id, usedWordIds: [...(unused.length ? previous?.usedWordIds ?? [] : []), word.id],
+      category: word.category, hint: hint?.label,
+      confirmClues,
+      imposterPlayerId: pickOne(players).id, clueOrder: shuffle(players.map(({ id }) => id)),
+      avatars: { ...avatars }, avatarDone, autoContinueByPlayer: { ...previous?.autoContinueByPlayer },
+      gameScores: { ...previous?.gameScores }, currentTurnIndex: 0, votesByPlayer: {},
+      voteTied: false, imposterWon: false, finishAt: null, disconnectedAt: {}
     };
   },
   startRound(state, context) {
-    const text = imposterText[context.language];
-
-    return {
-      ...state,
-      phase: "playing",
-      startedAt: context.now,
-      phaseStartedAt: context.now,
-      phaseEndsAt: null,
-      updatedAt: context.now,
-      message: text.cluesRunning
-    };
+    return { ...state, phase: "playing", startedAt: context.now, phaseStartedAt: context.now,
+      phaseEndsAt: null, updatedAt: context.now };
+  },
+  handleHostAction(state, action) {
+    if (state && state.phase !== "finished") return null;
+    if (!action || typeof action !== "object") return null;
+    const options = action as { type?: unknown; category?: unknown; hint?: unknown; confirmClues?: unknown };
+    if (options.type !== "configure-lobby") return null;
+    const roomSettings: Record<string, unknown> = {};
+    if (typeof options.category === "string" && ["standard", "adult", "all"].includes(options.category)) roomSettings.imposterWordCategory = options.category;
+    if (options.hint === "on" || options.hint === "off") roomSettings.imposterGiveHint = options.hint;
+    if (options.confirmClues === "on" || options.confirmClues === "off") roomSettings.imposterConfirmClues = options.confirmClues;
+    return Object.keys(roomSettings).length ? { roomSettings } : null;
   },
   handleInput(state, input, context) {
-    if (state.phase !== "playing") {
-      return state;
+    if (input.roundId !== state.roundId || !eligible(state, context).includes(input.playerId)) return state;
+    if (input.type === "set_auto_continue" && typeof input.enabled === "boolean") {
+      return { ...state, autoContinueByPlayer: { ...state.autoContinueByPlayer, [input.playerId]: input.enabled }, updatedAt: context.now };
     }
-
-    if (state.stage === "clues" && input.type === "submit_clue") {
-      const currentTurnPlayerId = getCurrentTurnPlayerId(state.clueOrder, state.currentTurnIndex);
-
-      if (input.playerId !== currentTurnPlayerId) {
-        return state;
-      }
-
-      const clueTurnsTotal = getClueTurnsTotal(state.clueOrder);
-      const nextTurnIndex = state.currentTurnIndex + 1;
-
-      if (nextTurnIndex >= clueTurnsTotal) {
-        return {
-          ...state,
-          stage: "voting",
-          currentTurnIndex: nextTurnIndex,
-          updatedAt: context.now,
-          message: imposterText[context.language].cluesDone
-        };
-      }
-
-      const nextTurnPlayerId = getCurrentTurnPlayerId(state.clueOrder, nextTurnIndex);
-      const nextState: ImposterState = {
-        ...state,
-        currentTurnIndex: nextTurnIndex,
-        updatedAt: context.now,
-        message: nextTurnPlayerId
-          ? imposterText[context.language].nextPlayer(
-              context.players.find((player) => player.id === nextTurnPlayerId)?.name ??
-                imposterText[context.language].nextFallback
-            )
-          : imposterText[context.language].nextTurn
-      };
-
-      return nextState;
+    if (state.phase !== "playing") return state;
+    if (state.stage === "avatar" && (input.type === "imposter:avatar" || input.type === "imposter:skip_avatar")) {
+      if (state.avatarDone[input.playerId] || (input.type === "imposter:avatar" && !validPhoto(input.media))) return state;
+      const next = { ...state, avatars: { ...state.avatars, ...(input.type === "imposter:avatar" ? { [input.playerId]: input.media } : {}) },
+        avatarDone: { ...state.avatarDone, [input.playerId]: true }, updatedAt: context.now };
+      return state.clueOrder.every((id) => next.avatarDone[id]) ? { ...next, stage: afterPhotos(state) } : next;
     }
-
+    if (state.stage === "clues" && input.type === "submit_clue" && input.playerId === currentTurn(state) && input.turnIndex === state.currentTurnIndex) {
+      return nextTurn(state, context);
+    }
     if (state.stage === "voting" && input.type === "vote_player") {
-      if (state.votesByPlayer[input.playerId] || input.suspectPlayerId === input.playerId) {
-        return state;
-      }
-
-      const nextState: ImposterState = {
-        ...state,
-        votesByPlayer: {
-          ...state.votesByPlayer,
-          [input.playerId]: input.suspectPlayerId
-        },
-        updatedAt: context.now
-      };
-
-      if (Object.keys(nextState.votesByPlayer).length >= state.clueOrder.length) {
-        return resolveVoteResult(nextState, context.now, context.language);
-      }
-
-      return {
-        ...nextState,
-        message: imposterText[context.language].votingProgress(
-          Object.keys(nextState.votesByPlayer).length,
-          state.clueOrder.length
-        )
-      };
+      if (state.votesByPlayer[input.playerId] || input.playerId === input.suspectPlayerId || !state.clueOrder.includes(input.suspectPlayerId)) return state;
+      const next = { ...state, votesByPlayer: { ...state.votesByPlayer, [input.playerId]: input.suspectPlayerId }, updatedAt: context.now };
+      return state.clueOrder.every((id) => next.votesByPlayer[id]) ? closeVote(next, context) : next;
     }
-
-    if (
-      state.stage === "imposter_guess" &&
-      input.type === "guess_word" &&
-      input.playerId === state.imposterPlayerId
-    ) {
-      return resolveImposterGuess(state, input.guessWord, context.now, context.language);
+    if (state.stage === "imposter_guess" && input.type === "guess_word" && input.playerId === state.imposterPlayerId && typeof input.guessWord === "string") {
+      if (state.finishAt !== null && context.now >= state.finishAt) return settle(state, context, false, text[context.language].timeout);
+      const guess = input.guessWord.trim();
+      if (!guess || guess.length > 100) return state;
+      const won = normalizeGuess(guess) === normalizeGuess(state.secretWord);
+      return settle({ ...state, imposterGuess: guess }, context, won, won ? text[context.language].guessed : text[context.language].caught);
     }
-
     return state;
   },
-  isRoundFinished(state) {
-    return state.stage === "resolved";
+  tick(state, _deltaMs, context) {
+    if (state.stage === "resolved") return state;
+    let next = state;
+    const connected = eligible(state, context);
+    const disconnectedAt = { ...state.disconnectedAt };
+    for (const id of state.clueOrder) {
+      if (connected.includes(id)) delete disconnectedAt[id];
+      else disconnectedAt[id] ??= context.now;
+    }
+    if (JSON.stringify(disconnectedAt) !== JSON.stringify(state.disconnectedAt)) next = { ...state, disconnectedAt, updatedAt: context.now };
+    const imposterLeftAt = disconnectedAt[state.imposterPlayerId];
+    if (imposterLeftAt !== undefined && context.now - imposterLeftAt >= disconnectGraceMs) return settle(next, context, false, text[context.language].left);
+    if (state.stage === "avatar" && connected.length && connected.every((id) => state.avatarDone[id]) && !Object.keys(disconnectedAt).length) return { ...next, stage: afterPhotos(state), updatedAt: context.now };
+    if (state.stage === "clues") {
+      const id = currentTurn(state);
+      if (id && disconnectedAt[id] !== undefined && context.now - disconnectedAt[id] >= disconnectGraceMs) return nextTurn(next, context);
+    }
+    if (state.stage === "avatar" && connected.length && connected.every((id) => state.avatarDone[id]) && Object.values(disconnectedAt).every((at) => context.now - at >= disconnectGraceMs)) return { ...next, stage: afterPhotos(state), updatedAt: context.now };
+    if (state.stage === "voting" && connected.length && connected.every((id) => state.votesByPlayer[id]) && Object.values(disconnectedAt).every((at) => context.now - at >= disconnectGraceMs)) return closeVote(next, context);
+    if (state.stage === "vote_reveal" && state.finishAt !== null && context.now >= state.finishAt) {
+      if (state.voteTied) return settle(next, context, true, text[context.language].tied);
+      if (!state.voteResultPlayerId) return settle(next, context, true, text[context.language].noVotes);
+      if (state.voteResultPlayerId !== state.imposterPlayerId) return settle(next, context, true, text[context.language].escaped);
+      return { ...next, stage: "imposter_guess", finishAt: context.now + guessMs, updatedAt: context.now };
+    }
+    if (state.stage === "imposter_guess" && state.finishAt !== null && context.now >= state.finishAt) return settle(next, context, false, text[context.language].timeout);
+    return next;
   },
-  buildScore(state) {
-    return buildScore(state);
-  },
-  toPublicState(state, context) {
-    const voteCounts = countVotes(state.votesByPlayer);
-    const playerNames = Object.fromEntries(context.players.map((player) => [player.id, player.name]));
-    const currentTurnPlayerId =
-      state.stage === "clues" ? getCurrentTurnPlayerId(state.clueOrder, state.currentTurnIndex) : undefined;
-    const clueTurnsTotal = getClueTurnsTotal(state.clueOrder);
-
-    return {
-      stage: state.stage,
-      category: localizeImposterCategory(state.category, context.language),
-      clueOrder: state.clueOrder,
-      currentTurnIndex: state.currentTurnIndex,
-      currentTurnPlayerId,
-      clueTurnsTotal,
-      voteCounts: voteCounts.map(([playerId, votes]) => ({
-        playerId,
-        playerName: playerNames[playerId] ?? imposterText[context.language].unknown,
-        votes
-      })),
-      voteResultPlayerId: state.voteResultPlayerId,
-      imposterRevealName:
-        state.stage === "resolved" || state.stage === "imposter_guess"
-          ? playerNames[state.imposterPlayerId] ?? imposterText[context.language].unknown
-          : undefined,
-      secretWord: state.stage === "resolved" ? state.secretWord : undefined,
-      imposterGuess: state.imposterGuess,
-      imposterWon: state.imposterWon,
-      resolvedReason: state.resolvedReason,
-      message: state.message
-    };
-  },
+  isRoundFinished: (state, context) => state.stage === "resolved" && state.finishAt !== null && context.now >= state.finishAt,
+  buildScore: score,
+  toPublicState: publicState,
   toControllerStateForPlayer(state, context, playerId) {
-    return buildControllerStateForPlayer(state, context.language, playerId);
+    const role = !state.clueOrder.includes(playerId) ? "spectator" : playerId === state.imposterPlayerId ? "imposter" : "crew";
+    return {
+      ...publicState(state, context), role,
+      // Only the crew gets the word before resolution. Never send answer choices.
+      secretWord: state.stage === "resolved" || (role === "crew" && state.stage !== "avatar") ? state.secretWord : undefined,
+      hint: role === "imposter" && state.stage !== "avatar" && state.stage !== "resolved" ? state.hint : undefined,
+      hasVoted: Boolean(state.votesByPlayer[playerId]), ownVote: state.votesByPlayer[playerId],
+      avatarSubmitted: Boolean(state.avatarDone[playerId]), autoContinue: Boolean(state.autoContinueByPlayer[playerId]),
+      voteOptions: state.stage === "voting" && role !== "spectator" ? state.clueOrder.filter((id) => id !== playerId) : []
+    };
   }
 };

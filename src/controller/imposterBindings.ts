@@ -1,43 +1,11 @@
-import type { PlayerInput } from "@open-party-lab/game-core";
+import type { ImposterInput } from "../protocol.js";
 
-export interface SubmitImposterClueInput extends PlayerInput {
-  type: "submit_clue";
-  clue: string;
+export function createImposterClueInput(playerId: string, roundId: string, turnIndex: number): ImposterInput {
+  return { type: "submit_clue", playerId, roundId, turnIndex, sentAt: Date.now() };
 }
-
-export interface VoteImposterInput extends PlayerInput {
-  type: "vote_player";
-  suspectPlayerId: string;
+export function createImposterVoteInput(playerId: string, roundId: string, suspectPlayerId: string): ImposterInput {
+  return { type: "vote_player", playerId, roundId, suspectPlayerId, sentAt: Date.now() };
 }
-
-export interface GuessImposterWordInput extends PlayerInput {
-  type: "guess_word";
-  guessWord: string;
-}
-
-export function createImposterClueInput(playerId: string, clue: string): SubmitImposterClueInput {
-  return {
-    type: "submit_clue",
-    playerId,
-    clue,
-    sentAt: Date.now()
-  };
-}
-
-export function createImposterVoteInput(playerId: string, suspectPlayerId: string): VoteImposterInput {
-  return {
-    type: "vote_player",
-    playerId,
-    suspectPlayerId,
-    sentAt: Date.now()
-  };
-}
-
-export function createImposterGuessInput(playerId: string, guessWord: string): GuessImposterWordInput {
-  return {
-    type: "guess_word",
-    playerId,
-    guessWord,
-    sentAt: Date.now()
-  };
+export function createImposterGuessInput(playerId: string, roundId: string, guessWord: string): ImposterInput {
+  return { type: "guess_word", playerId, roundId, guessWord, sentAt: Date.now() };
 }
