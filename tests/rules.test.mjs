@@ -144,6 +144,20 @@ test("direct voting skips clue confirmations independently of the private Impost
   }
 });
 
+test("profile avatars work with both legacy and current player summaries", () => {
+  const { context } = fixture();
+  const profiles = players.map((player) => ({ ...player, avatar: `photo-${player.id}` }));
+  const full = serverGame.createInitialState({ ...context, players: profiles });
+  assert.equal(full.stage, "clues");
+  assert.deepEqual(full.avatars, { a: "photo-a", b: "photo-b", c: "photo-c", d: "photo-d" });
+  const partial = serverGame.createInitialState({ ...context, players: [profiles[0], players[1], { ...players[2], avatar: null }, { ...players[3], avatar: "" }] });
+  assert.equal(partial.stage, "avatar");
+  assert.deepEqual(partial.avatars, { a: "photo-a" });
+  assert.deepEqual(partial.avatarDone, { a: true });
+  const legacy = serverGame.createInitialState(context);
+  assert.equal(legacy.stage, "avatar"); assert.deepEqual(legacy.avatars, {});
+});
+
 test("photos optional, invalid uploads rejected, completed setup carried into next word", () => {
   const { context, state } = fixture();
   assert.equal(input(state, context, "a", { type: "imposter:avatar", media: "javascript:alert(1)" }), state);

@@ -109,7 +109,10 @@ export const serverGame: ServerGame<ImposterState, ImposterInput, ImposterPublic
     const word = pickOne(candidates.length ? candidates : words);
     const confirmClues = context.roomSettings.imposterConfirmClues !== "off";
     const hint = context.roomSettings.imposterGiveHint === "on" ? word.hints[0] : undefined;
-    const profileAvatars = Object.fromEntries(players.filter(({ avatar }) => avatar).map(({ id, avatar }) => [id, avatar as string]));
+    // Older platform versions do not yet declare or supply profile avatars.
+    const profileAvatars = Object.fromEntries(players.flatMap((player) =>
+      "avatar" in player && typeof player.avatar === "string" && player.avatar
+        ? [[player.id, player.avatar]] : []));
     const avatars = { ...previous?.avatars, ...profileAvatars };
     const avatarDone = Object.fromEntries(players.filter(({ id }) => profileAvatars[id] || previous?.avatarDone[id]).map(({ id }) => [id, true]));
     return {
