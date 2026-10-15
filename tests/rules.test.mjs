@@ -164,20 +164,35 @@ test("turn order and round/turn guards reject early, stale and duplicate submiss
   assert.equal(input(next, context, "a", { type: "submit_clue", turnIndex: 0 }), next);
 });
 
-test("votes are secret until all votes; self-votes, outsiders, invalid targets and duplicate votes rejected", () => {
+test("votes can change until everyone votes; only the latest choice counts and ballots stay private", () => {
   const { context, state: initial } = fixture();
   let state = clues(initial, context);
   for (const [id, target] of [["a", "a"], ["a", "outsider"], ["outsider", "a"]]) assert.equal(input(state, context, id, { type: "vote_player", suspectPlayerId: target }), state);
   state = input(state, context, "a", { type: "vote_player", suspectPlayerId: "b" });
-  assert.equal(input(state, context, "a", { type: "vote_player", suspectPlayerId: "c" }), state);
+  assert.equal(input(state, context, "a", { type: "vote_player", suspectPlayerId: "b" }), state);
+  state = input(state, context, "a", { type: "vote_player", suspectPlayerId: "c" });
+  assert.equal(state.stage, "voting");
+  assert.equal(serverGame.toPublicState(state, context).submittedCount, 1);
+  assert.equal(input(state, context, "a", { type: "vote_player", suspectPlayerId: "a" }), state);
+  assert.equal(input(state, context, "a", { type: "vote_player", suspectPlayerId: "outsider" }), state);
   assert.deepEqual(serverGame.toPublicState(state, context).voteCounts, []);
   assert.equal(serverGame.toControllerStateForPlayer(state, context, "b").votesByPlayer, undefined);
   assert.equal(serverGame.toControllerStateForPlayer(state, context, "b").ownVote, undefined);
-  assert.equal(serverGame.toControllerStateForPlayer(state, context, "a").ownVote, "b");
+  assert.equal(serverGame.toControllerStateForPlayer(state, context, "a").ownVote, "c");
   for (const id of ["b", "c"]) state = input(state, context, id, { type: "vote_player", suspectPlayerId: "a" });
   assert.equal(state.stage, "voting"); assert.deepEqual(serverGame.toPublicState(state, context).voteCounts, []);
+  // The shared phone layout uses hasSubmitted to disable vote buttons.
+  const messages = [];
+  const model = buildImposterControllerModel({ state: { room: { language: "de", players }, player: { id: "a" }, game: { phase: "playing", state: serverGame.toControllerStateForPlayer(state, context, "a") } }, onInput: (message) => messages.push(message) });
+  assert.equal(model.stage, "vote"); assert.equal(model.hasSubmitted, false);
+  assert.equal(model.disabled, false); assert.equal(model.selectedId, "c");
+  model.onVote("d");
+  assert.equal(messages.at(-1).suspectPlayerId, "d");
+  state = input(state, context, "a", messages.at(-1));
   state = input(state, context, "d", { type: "vote_player", suspectPlayerId: "a" });
   assert.equal(state.stage, "vote_reveal"); assert.equal(serverGame.toPublicState(state, context).voteCounts[0].votes, 3);
+  assert.deepEqual(serverGame.toPublicState(state, context).voteCounts, [{ playerId: "a", votes: 3 }, { playerId: "d", votes: 1 }]);
+  assert.equal(input(state, context, "a", { type: "vote_player", suspectPlayerId: "b" }), state);
 });
 
 test("ties expose nobody and the Imposter wins", () => {

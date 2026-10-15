@@ -25,8 +25,9 @@ compatibility and group usability still need physical-device playtesting.
    person. Do not say the answer. Confirm each spoken clue on the phone.
    Disable **Hinweis gegeben bestätigen** in setup to discuss freely and vote
    directly after photo setup, without any clue-confirmation buttons.
-4. Discuss and cast one secret vote for another player on the phone. No self-votes
-   or vote changes. The host only shows counts after all players have voted.
+4. Discuss and cast one secret vote for another player on the phone. No self-votes.
+   You can change your choice until the last player votes. Only your latest choice
+   counts; the host shows the final counts together after all players have voted.
 5. A unique plurality accuses that player. A tie exposes nobody and the Imposter
    wins. If an innocent player is accused, the Imposter also wins.
 6. If exposed, the Imposter gets 30 seconds and one **free-text** guess. The secret
@@ -124,3 +125,7 @@ For visual checks, start Open Party Lab, add virtual controllers when needed, an
 Code is licensed under the Apache License 2.0. See [LICENSE](LICENSE).
 
 Assets, generated media, word lists, prompts, and third-party references may need separate rights review before public store distribution.
+
+## Lobby selfies
+
+When the platform provides `GamePlayerSummary.avatar`, Imposter uses that photo for the player's character and skips their in-game selfie step. Players without a lobby photo retain the existing selfie/skip flow.

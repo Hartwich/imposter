@@ -45,7 +45,7 @@ export function buildImposterControllerModel({ state, onInput, onSetReady }: Con
       ? (en ? "Say one related word out loud. Do not say the secret word. Then confirm below." : "Nenne laut ein passendes Wort. Verrate den Begriff nicht. Bestätige danach unten.")
       : (en ? `${currentName} is speaking. Listen closely.` : `${currentName} ist dran. Hör gut zu.`)
     : game?.stage === "voting" ? game.hasVoted
-      ? (en ? "Vote locked. Results appear when everyone has voted." : "Stimme abgegeben. Das Ergebnis erscheint, wenn alle abgestimmt haben.")
+      ? (en ? "Vote submitted. You can change your choice until everyone has voted." : "Stimme abgegeben. Du kannst deine Auswahl ändern, bis alle abgestimmt haben.")
       : (en ? "Share clues and discuss. Then tap the player you suspect. One secret vote; no self-votes." : "Nennt eure Hinweise und diskutiert. Tippe dann auf deinen Verdacht. Eine geheime Stimme; keine Selbstwahl.")
     : game?.stage === "imposter_guess" ? isImposter
       ? (en ? "Type the secret word. You have one guess and 30 seconds." : "Gib den geheimen Begriff ein. Du hast einen Versuch und 30 Sekunden.")
@@ -65,7 +65,7 @@ export function buildImposterControllerModel({ state, onInput, onSetReady }: Con
       : game?.hint ? { label: en ? "Your hint" : "Dein Hinweis", term: game.hint } : undefined,
     score: players.find(({ id }) => id === playerId)?.points ?? 0,
     taskKind: "text" as const, maxTextLength: 100, resetKey: `${game?.roundId ?? ""}:${stage}`,
-    hasSubmitted: stage === "avatar" ? Boolean(game?.avatarSubmitted) : stage === "vote" ? Boolean(game?.hasVoted) : false,
+    hasSubmitted: stage === "avatar" ? Boolean(game?.avatarSubmitted) : false,
     disabled: !inPlay || spectator, selectedId: game?.ownVote,
     choices: (game?.voteOptions ?? []).map((id) => ({ id, label: players.find((player) => player.id === id)?.name ?? id, avatar: players.find((player) => player.id === id)?.avatar })),
     actions: inPlay && game?.stage === "avatar" && !game.avatarSubmitted && !spectator

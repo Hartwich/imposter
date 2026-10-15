@@ -109,8 +109,9 @@ export const serverGame: ServerGame<ImposterState, ImposterInput, ImposterPublic
     const word = pickOne(candidates.length ? candidates : words);
     const confirmClues = context.roomSettings.imposterConfirmClues !== "off";
     const hint = context.roomSettings.imposterGiveHint === "on" ? word.hints[0] : undefined;
-    const avatars = previous?.avatars ?? {};
-    const avatarDone = Object.fromEntries(players.filter(({ id }) => previous?.avatarDone[id]).map(({ id }) => [id, true]));
+    const profileAvatars = Object.fromEntries(players.filter(({ avatar }) => avatar).map(({ id, avatar }) => [id, avatar as string]));
+    const avatars = { ...previous?.avatars, ...profileAvatars };
+    const avatarDone = Object.fromEntries(players.filter(({ id }) => profileAvatars[id] || previous?.avatarDone[id]).map(({ id }) => [id, true]));
     return {
       ...createBaseRoundState("round_intro", context.now, { durationMs: 1_600 }),
       roundId: `${context.roundNumber}:${context.now}`, stage: players.every(({ id }) => avatarDone[id]) ? (confirmClues ? "clues" : "voting") : "avatar",
@@ -155,7 +156,7 @@ export const serverGame: ServerGame<ImposterState, ImposterInput, ImposterPublic
       return nextTurn(state, context);
     }
     if (state.stage === "voting" && input.type === "vote_player") {
-      if (state.votesByPlayer[input.playerId] || input.playerId === input.suspectPlayerId || !state.clueOrder.includes(input.suspectPlayerId)) return state;
+      if (state.votesByPlayer[input.playerId] === input.suspectPlayerId || input.playerId === input.suspectPlayerId || !state.clueOrder.includes(input.suspectPlayerId)) return state;
       const next = { ...state, votesByPlayer: { ...state.votesByPlayer, [input.playerId]: input.suspectPlayerId }, updatedAt: context.now };
       return state.clueOrder.every((id) => next.votesByPlayer[id]) ? closeVote(next, context) : next;
     }
