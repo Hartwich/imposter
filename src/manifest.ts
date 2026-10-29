@@ -1,3 +1,4 @@
+import { imposterText } from "./catalogText.js";
 import type { GameManifest } from "@open-party-lab/game-core";
 
 const rules = {
@@ -15,6 +16,7 @@ const rules = {
 
 export const imposterManifest = {
   id: "imposter",
+  translations: imposterText,
   displayName: "Imposter",
   description: "Finde den Bluffenden durch Hinweise und Abstimmung.",
   minPlayers: 3,

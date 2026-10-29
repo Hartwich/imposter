@@ -9,7 +9,7 @@ const newWords: Array<[string, boolean, string]> = [
   ["Essen", false, "Popcorn/Popcorn|Waffel/Waffle|Falafel/Falafel|Honig/Honey|Avocado/Avocado|Gummibärchen/Gummy bears|Ananas/Pineapple|Schokolade/Chocolate"],
   ["Objekt", false, "Kompass/Compass|Hängematte/Hammock|Lupe/Magnifying glass|Sanduhr/Hourglass|Seifenblasen/Soap bubbles|Gießkanne/Watering can|Fernglas/Binoculars|Springseil/Skipping rope"],
   ["Ort", false, "Weltraumstation/Space station|Baumhaus/Treehouse|Freizeitpark/Theme park|Planetarium/Planetarium|Berghütte/Mountain cabin|Eisdiele/Ice cream parlour|Spielplatz/Playground|Hafen/Harbour"],
-  ["Tier", false, "Axolotl/Axolotl|Erdmännchen/Meerkat|Flamingo/Flamingo|Waschbär/Raccoon|Fledermaus/Bat|Krake/Squid|Nashorn/Rhinoceros|Libelle/Dragonfly"],
+  ["Tier", false, "Axolotl/Axolotl|Erdmännchen/Meerkat|Flamingo/Flamingo|Waschbär/Raccoon|Fledermaus/Bat|Krake/Octopus|Nashorn/Rhinoceros|Libelle/Dragonfly"],
   ["Alltag", false, "Geburtstag/Birthday|Taschengeld/Pocket money|Zähneputzen/Brushing teeth|Picknick/Picnic|Verstecken/Hide-and-seek|Überraschung/Surprise|Schneeballschlacht/Snowball fight|Kissenschlacht/Pillow fight"],
   ["Sport", false, "Trampolin/Trampoline|Fechten/Fencing|Minigolf/Mini golf|Rudern/Rowing|Hula-Hoop/Hula hoop|Staffellauf/Relay race|Tischtennis/Table tennis|Wasserski/Water skiing"],
   ["Beruf", false, "Astronaut/Astronaut|Tierpfleger/Zookeeper|Detektiv/Detective|Dirigent/Conductor|Bäcker/Baker|Gärtner/Gardener|Schauspieler/Actor|Busfahrer/Bus driver"],
@@ -22,16 +22,34 @@ const newWords: Array<[string, boolean, string]> = [
   ["Sexualität",true,"Orgasmus/Orgasm|Erektion/Erection|Masturbation/Masturbation|Vibrator/Vibrator|Dildo/Dildo|Gleitgel/Lubricant|Analverkehr/Anal sex|Oralverkehr/Oral sex|Blowjob/Blowjob|Cunnilingus/Cunnilingus|Dreier/Threesome|Gruppensex/Group sex|Swingerclub/Swingers club|Fetisch/Fetish|BDSM/BDSM|Bondage/Bondage|Handschellen/Handcuffs|Peitsche/Whip|Lack und Leder/Latex and leather|Reizwäsche/Erotic lingerie|Dessous/Lingerie|Strap-on/Strap-on|Plug/Butt plug|Sexschaukel/Sex swing|Liebeskugel/Ben Wa ball|Penis/Penis|Vulva/Vulva|Klitoris/Clitoris|Hoden/Testicles|Brustwarze/Nipple|Nippelpiercing/Nipple piercing|Intimpiercing/Genital piercing|Schamhaar/Pubic hair|Intimrasur/Intimate shaving|Sperma/Semen|Ejakulation/Ejaculation|Lusttropfen/Pre-ejaculate|Libido/Libido|Viagra/Viagra|Potenz/Potency|Sexstellung/Sex position|Missionarsstellung/Missionary position|Doggy Style/Doggy style|Reiterstellung/Cowgirl position|Quickie/Quickie|Vorspiel/Foreplay|Nachspiel/Afterplay|Dirty Talk/Dirty talk|Rollenspiel/Roleplay|Striptease/Striptease|Pornofilm/Pornographic film|Pornokino/Adult cinema|Erotikmesse/Erotic trade fair|Sexshop/Sex shop|Bordell/Brothel|Escort/Escort|Prostitution/Prostitution|Telefonsex/Phone sex|Cybersex/Cybersex|Nacktbild/Nude photo|Fummeln/Groping|Petting/Petting|Zungenkuss/French kiss|Sexfantasie/Sexual fantasy|Voyeurismus/Voyeurism|Exhibitionismus/Exhibitionism|Sexsucht/Sex addiction|Keuschheitsgürtel/Chastity belt|Pille danach/Morning-after pill|Verhütungspille/Contraceptive pill"],
   ["Schimpfwörter",true,"Arschloch/Asshole|Wichser/Wanker|Hurensohn/Son of a bitch|Schlampe/Slut|Mistkerl/Bastard|Drecksack/Dirtbag|Vollidiot/Complete idiot|Trottel/Fool|Depp/Dummy|Blödmann/Moron|Kotzbrocken/Jerk|Schwein/Pig|Sackgesicht/Dickhead|Arschgeige/Asshat|Pissnelke/Pisshead|Scheiße/Shit|Verdammt/Damn|Verfickt/Fucking|Leck mich/Kiss my ass|Fick dich/Fuck you|Halt die Fresse/Shut the fuck up|Verpiss dich/Piss off|Bullshit/Bullshit|Klugscheißer/Smartass|Labertasche/Blabbermouth|Schleimscheißer/Sycophant|Arschkriecher/Ass-kisser|Dummschwätzer/Bullshitter|Maulheld/Blowhard|Flachwichser/Tosser"]
 ];
+const englishCategories: Readonly<Record<string, string>> = {
+  "Essen": "Food",
+  "Objekt": "Objects",
+  "Ort": "Places",
+  "Tier": "Animals",
+  "Alltag": "Everyday life",
+  "Sport": "Sport",
+  "Beruf": "Jobs",
+  "Technik": "Technology",
+  "Natur": "Nature",
+  "Kultur": "Culture",
+  "Nachtleben": "Nightlife",
+  "Beziehungen": "Relationships",
+  "Erwachsenenleben": "Adult life",
+  "Sexualität": "Sexuality",
+  "Schimpfwörter": "Strong language"
+};
+const categoryLabel = (category: string, language: SupportedLanguage) => language === "en" ? englishCategories[category] ?? category : category;
 const normalize = (value: string) => value.toLocaleLowerCase().replace(/[^\p{L}\p{N}]/gu, "");
 export function getWords(language: SupportedLanguage, pool: unknown): WordPack[] {
   const index = language === "en" ? 1 : 0;
-  const entries: WordPack[] = legacyWords.map((entry, i) => ({ id: normalize(entry.word), category: entry.category,
+  const entries: WordPack[] = legacyWords.map((entry, i) => ({ id: normalize(entry.word), category: categoryLabel(entry.category, language),
     word: language === "en" ? englishLegacy[i] : entry.word === "Toothbrush" ? "Zahnbürste" : entry.word,
     hints: getWordHints(normalize(entry.word), language), adult: false }));
   for (const [category, adult, pairs] of newWords) {
     for (const pair of pairs.split("|")) {
       const terms = pair.split("/");
-      entries.push({ id: normalize(terms[0]), category, word: terms[index], hints: getWordHints(normalize(terms[0]), language), adult });
+      entries.push({ id: normalize(terms[0]), category: categoryLabel(category, language), word: terms[index], hints: getWordHints(normalize(terms[0]), language), adult });
     }
   }
   return entries.filter((entry) => pool === "all" || entry.adult === (pool === "adult"));
