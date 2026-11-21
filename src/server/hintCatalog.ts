@@ -1,4 +1,5 @@
 import type { SupportedLanguage } from "@open-party-lab/game-core";
+import { translatedImposterWord } from "./translatedWords.js";
 
 // Curated associations for every word: German source words; German/English hints.
 // No automatic broad category fallback: missing assignments fail validation.
@@ -469,5 +470,5 @@ for (const row of hintRows.trim().split(/\r?\n/)) {
 export function getWordHints(id: string, language: SupportedLanguage) {
   const hints = hintCatalog.get(id);
   if (!hints?.length) throw new Error(`Missing Imposter hints: ${id}`);
-  return hints.map(([de, en]) => ({ id: `association:${normalize(de)}`, label: language === "en" ? en : de }));
+  return hints.map(([de, en]) => ({ id: `association:${normalize(de)}`, label: language === "de" ? de : language === "en" ? en : translatedImposterWord(en, language) ?? en }));
 }

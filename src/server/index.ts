@@ -28,6 +28,21 @@ const text = {
     timeout: "The Imposter did not guess the word. The crew wins.",
     left: "The Imposter left the round. The crew wins.",
     noVotes: "No valid votes. The Imposter escapes."
+  },
+  es: {
+    tied: "Empate: nadie queda expuesto. El impostor escapa.", escaped: "El grupo acusó a la persona equivocada. El impostor escapa.",
+    guessed: "El impostor adivinó la palabra y se llevó la victoria.", caught: "La tripulación descubrió al impostor, pero su intento de palabra fue incorrecto.",
+    timeout: "El impostor no adivinó la palabra. Gana la tripulación.", left: "El impostor abandonó la ronda. Gana la tripulación.", noVotes: "No hubo votos válidos. El impostor escapa."
+  },
+  fr: {
+    tied: "Égalité : personne n’est démasqué. L’imposteur s’échappe.", escaped: "Le groupe a accusé la mauvaise personne. L’imposteur s’échappe.",
+    guessed: "L’imposteur a deviné le mot et remporte la victoire.", caught: "L’équipage a démasqué l’imposteur, mais sa réponse était fausse.",
+    timeout: "L’imposteur n’a pas deviné le mot. L’équipage gagne.", left: "L’imposteur a quitté la manche. L’équipage gagne.", noVotes: "Aucun vote valide. L’imposteur s’échappe."
+  },
+  "pt-BR": {
+    tied: "Empate: ninguém foi descoberto. O impostor escapa.", escaped: "O grupo acusou a pessoa errada. O impostor escapa.",
+    guessed: "O impostor adivinhou a palavra e roubou a vitória.", caught: "A tripulação descobriu o impostor, mas ele errou a palavra.",
+    timeout: "O impostor não adivinhou a palavra. A tripulação venceu.", left: "O impostor saiu da rodada. A tripulação venceu.", noVotes: "Nenhum voto válido. O impostor escapa."
   }
 };
 export function normalizeGuess(value: string): string {

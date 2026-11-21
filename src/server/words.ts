@@ -1,6 +1,7 @@
 import type { SupportedLanguage } from "@open-party-lab/game-core";
 import { legacyWords } from "./legacyWords.js";
 import { getWordHints } from "./hintCatalog.js";
+import { translatedImposterWord } from "./translatedWords.js";
 
 export interface HintOption { id: string; label: string }
 export interface WordPack { id: string; category: string; word: string; hints: HintOption[]; adult: boolean }
@@ -39,17 +40,25 @@ const englishCategories: Readonly<Record<string, string>> = {
   "Sexualität": "Sexuality",
   "Schimpfwörter": "Strong language"
 };
-const categoryLabel = (category: string, language: SupportedLanguage) => language === "en" ? englishCategories[category] ?? category : category;
+const extraCategories: Record<string, Record<string, string>> = {
+  es: { Essen: "Comida", Objekt: "Objeto", Ort: "Lugar", Tier: "Animal", Alltag: "Vida diaria", Sport: "Deporte", Beruf: "Profesión", Technik: "Tecnología", Natur: "Naturaleza", Kultur: "Cultura", Nachtleben: "Vida nocturna", Beziehungen: "Relaciones", Erwachsenenleben: "Vida adulta", Sexualität: "Sexualidad", Schimpfwörter: "Insultos" },
+  fr: { Essen: "Cuisine", Objekt: "Objet", Ort: "Lieu", Tier: "Animal", Alltag: "Vie quotidienne", Sport: "Sport", Beruf: "Métier", Technik: "Technologie", Natur: "Nature", Kultur: "Culture", Nachtleben: "Vie nocturne", Beziehungen: "Relations", Erwachsenenleben: "Vie adulte", Sexualität: "Sexualité", Schimpfwörter: "Gros mots" },
+  "pt-BR": { Essen: "Comida", Objekt: "Objeto", Ort: "Lugar", Tier: "Animal", Alltag: "Dia a dia", Sport: "Esporte", Beruf: "Profissão", Technik: "Tecnologia", Natur: "Natureza", Kultur: "Cultura", Nachtleben: "Vida noturna", Beziehungen: "Relacionamentos", Erwachsenenleben: "Vida adulta", Sexualität: "Sexualidade", Schimpfwörter: "Palavrões" }
+};
+const categoryLabel = (category: string, language: SupportedLanguage) => language === "en" ? englishCategories[category] ?? category : language === "de" ? category : extraCategories[language][category] ?? category;
 const normalize = (value: string) => value.toLocaleLowerCase().replace(/[^\p{L}\p{N}]/gu, "");
 export function getWords(language: SupportedLanguage, pool: unknown): WordPack[] {
-  const index = language === "en" ? 1 : 0;
-  const entries: WordPack[] = legacyWords.map((entry, i) => ({ id: normalize(entry.word), category: categoryLabel(entry.category, language),
-    word: language === "en" ? englishLegacy[i] : entry.word === "Toothbrush" ? "Zahnbürste" : entry.word,
-    hints: getWordHints(normalize(entry.word), language), adult: false }));
+  const entries: WordPack[] = legacyWords.flatMap((entry, i) => {
+    const english = englishLegacy[i]!;
+    const word = language === "de" ? entry.word === "Toothbrush" ? "Zahnbürste" : entry.word : language === "en" ? english : translatedImposterWord(english, language);
+    return word ? [{ id: normalize(entry.word), category: categoryLabel(entry.category, language), word,
+      hints: getWordHints(normalize(entry.word), language), adult: false }] : [];
+  });
   for (const [category, adult, pairs] of newWords) {
     for (const pair of pairs.split("|")) {
-      const terms = pair.split("/");
-      entries.push({ id: normalize(terms[0]), category: categoryLabel(category, language), word: terms[index], hints: getWordHints(normalize(terms[0]), language), adult });
+      const [german, english] = pair.split("/");
+      const word = language === "de" ? german : language === "en" ? english : translatedImposterWord(english!, language);
+      if (word) entries.push({ id: normalize(german!), category: categoryLabel(category, language), word, hints: getWordHints(normalize(german!), language), adult });
     }
   }
   return entries.filter((entry) => pool === "all" || entry.adult === (pool === "adult"));
